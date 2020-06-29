@@ -9,6 +9,9 @@ Description: this application execute the following tasks:
 - backup the mikrotik configuration and generate  .backup file
 - create a local directory
 - download .rsc and .backup files from mikrotik device to the generated directory
+
+Usage:
+    mikrotik-backup -i <ip or hostname> -p <ssh port> -u <username> -pw <password> 
 """
 
 
