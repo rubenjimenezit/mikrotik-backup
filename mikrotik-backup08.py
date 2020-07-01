@@ -17,7 +17,7 @@ Usage:
 
 #### IMPORT
 
-import argparse, datetime, os
+import argparse, datetime, time, os, sys
 from scp import SCPClient
 
 try:
@@ -45,27 +45,27 @@ def identity_get (host, port, username, password):
     """
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    #try:
-    client.connect(host,port=port, username=username, password=password,look_for_keys=False)
+    try:
+        client.connect(host,port=port, username=username, password=password,look_for_keys=False)
 
-    # get mikrotik system identity name
-    stdin, stdout, stderr = client.exec_command("{ :local id [/system identity get name]; :put $id}")
-    for line in stdout:
-        # set identity as the result of the command stripping '\n' (LF = Line Feed) and '\r' (CR = Carriage Return) 
-        identity = (line.strip('\n')).strip('\r')
-    return identity
-    #except paramiko.ssh_exception.AuthenticationException:
-    #    print("Authentication error")
-    #    return None
-    #except paramiko.ssh_exception.SSHException:
-    #    print("Connection error")
-    #    return None
-    #except paramiko.ssh_exception.NoValidConnectionsError:
-    #    print("Connection error")
-    #    return None
-    #except:
-    #    print("Error obtaining identity from mikrotik device")
-    #    return None
+        # get mikrotik system identity name
+        stdin, stdout, stderr = client.exec_command("{ :local id [/system identity get name]; :put $id}")
+        for line in stdout:
+            # set identity as the result of the command stripping '\n' (LF = Line Feed) and '\r' (CR = Carriage Return) 
+            identity = (line.strip('\n')).strip('\r')
+        return identity
+    except paramiko.ssh_exception.AuthenticationException:
+        print("Authentication error")
+        raise
+    except paramiko.ssh_exception.SSHException:
+        print("Connection error")
+        raise
+    except paramiko.ssh_exception.NoValidConnectionsError:
+        print("Connection error")
+        raise
+    except:
+        print("Error downloading file %s to local directory" % remoteFilePath)
+        raise
 
 
 def backup_create (host, port, username, password, backup_filename):
@@ -80,39 +80,43 @@ def backup_create (host, port, username, password, backup_filename):
     # ssh connection to device 
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-    #try:
-    client.connect(host,port=port, username=username, password=password,look_for_keys=False)
+    try:
+        client.connect(host,port=port, username=username, password=password,look_for_keys=False)
 
-    # execute in mikrotik: export mikrotik configuration to a file named <identity>-<date>-<time>.rsc
-    stdin, stdout, stderr = client.exec_command("/export file=" + backup_filename)
-    
-    # controlar que haya finalizado el export
-    exit_status = stdout.channel.recv_exit_status()
-    if exit_status == 0:
-        print ("Succesfully exported configuration in Mikrotik device")
-    else:
-        print("Error exporting configuration in Mikrotik device: ", exit_status)
-    
-    # execute in mikrotik: save backup configuration to a file named <identity>-<date>-<time>.backup
-    stdin, stdout, stderr = client.exec_command("/system backup save")
+        # execute in mikrotik: export mikrotik configuration to a file named <identity>-<date>-<time>.rsc
+        stdin, stdout, stderr = client.exec_command("/export file=" + backup_filename)
+        
+        # controlar que haya finalizado el export
+        exit_status = stdout.channel.recv_exit_status()
+        if exit_status == 0:
+            print ("Succesfully exported configuration in Mikrotik device")
+        else:
+            print("Error exporting configuration in Mikrotik device: ", exit_status)
+        
+        # execute in mikrotik: save backup configuration to a file named <identity>-<date>-<time>.backup
+        stdin, stdout, stderr = client.exec_command("/system backup save")
 
-    # waiting for command to finish
-    exit_status = stdout.channel.recv_exit_status()
-    if exit_status == 0:
-        print ("Succesfully configuration backup in Mikrotik device")
-    else:
-        print("Error creating configuration backup in Mikrotik device: ", exit_status)
-    
-        client.close()
+        # waiting for command to finish
+        exit_status = stdout.channel.recv_exit_status()
+        if exit_status == 0:
+            print ("Succesfully configuration backup in Mikrotik device")
+        else:
+            print("Error creating configuration backup in Mikrotik device: ", exit_status)
+        
+            client.close()
 
-    #except paramiko.ssh_exception.AuthenticationException:
-    #    print("Authentication error")
-    #except paramiko.ssh_exception.SSHException:
-    #    print("Connection error")
-    #except paramiko.ssh_exception.NoValidConnectionsError:
-    #    print("Connection error")
-    #except:
-    #    print("Error while exporting or creating configuration backup in Mikrotik device")
+    except paramiko.ssh_exception.AuthenticationException:
+        print("Authentication error")
+        raise
+    except paramiko.ssh_exception.SSHException:
+        print("Connection error")
+        raise
+    except paramiko.ssh_exception.NoValidConnectionsError:
+        print("Connection error")
+        raise
+    except:
+        print("Error while exporting or creating configuration backup in Mikrotik device")
+        raise
 
 
 def directory_create (path):
@@ -123,11 +127,12 @@ def directory_create (path):
     try:
         if not os.path.exists(path):
             os.mkdir(path)
-            print ("Directorio %s creado" % path)
+            print ("Directory %s created" % path)
         else:
-            print ("Directorio %s ya existe" % path)
+            print ("Directory %s already exists" % path)
     except OSError:
         print ("Error al crear directorio %s" % path)
+        raise
 
 
 def file_get (host, port, username, password, remoteFilePath, localFilePath):
@@ -146,9 +151,50 @@ def file_get (host, port, username, password, remoteFilePath, localFilePath):
     with SCPClient(ssh.get_transport()) as scp:
         try:
             scp.get(remoteFilePath,localFilePath)
-            print("Archivo descargado: %s" % localFilePath)
+            print("File downloaded: %s" % localFilePath)
         except:
-            print("Error al descargar el archivo %s a directorio local" % remoteFilePath)
+            print("Error downloading file %s to local directory" % remoteFilePath)
+            raise
+
+
+def file_exists (host, port, username, password, file):
+    """check if a file or directory exists in a Mikrotik device
+
+    :param host: mikrotik IP or hostname
+    :param port: mikrotik ssh connectin port
+    :param username: mikrotik username
+    :param password: mikrotik password
+    :param remoteFilePath: file path to be downloaded
+    :param localFilePath: destination local directory to save the downloaded file
+    """
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        ssh.connect(host,port=port, username=username, password=password,look_for_keys=False)
+
+        # execute in mikrotik: export mikrotik configuration to a file named <identity>-<date>-<time>.rsc
+        stdin, stdout, stderr = ssh.exec_command(":if ([:len [/file find name=" + file + "]] > 0) do={ :put \"FOUND IT\" }")
+        
+        file_found = ""
+        for line in stdout:
+            # set identity as the result of the command stripping '\n' (LF = Line Feed) and '\r' (CR = Carriage Return) 
+            file_found = (line.strip('\n')).strip('\r')
+
+        # wait for command to finish
+        exit_status = stdout.channel.recv_exit_status()
+        if exit_status != 0:
+            print("Could not look for file in Mikrotik device")
+        
+        ssh.close()
+
+        if (file_found == "FOUND IT"):
+            return True
+        else:
+            return False
+        
+    except:
+        raise
+
 
 
 #### ARGUMENTS
@@ -196,12 +242,12 @@ else:
 #### MAIN PROGRAM
 
 # print connection details
-print ("------------------")
+print ("-------------------------")
 print ("ip:", ip)
 print ("port:", port)
 print ("username:", username)
 print ("password:", password)
-print ("------------------")
+print ("")
 
 # get identity name from Mikrotik device
 identity = identity_get (ip, port, username, password)
@@ -224,6 +270,11 @@ localFilePath = path + "/" + backup_filename + ".rsc"
 file_get(ip, port, username, password, remoteFilePath, localFilePath)
 
 # download .backup file to local directory
-remoteFilePath = backup_filename + ".backup"
+if file_exists(ip, port, username, password,"flash"):
+    remoteFilePath = "flash/" + backup_filename + ".backup"
+else:
+    remoteFilePath = backup_filename + ".backup"
 localFilePath = path + "/" + backup_filename + ".backup"
 file_get(ip, port, username, password, remoteFilePath, localFilePath)
+
+print ("-------------------------")
